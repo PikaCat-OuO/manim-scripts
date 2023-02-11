@@ -297,7 +297,8 @@ class TranspositionTable(Scene):
         temp_text = MarkupText("Zobrist查询表是一个二维数组，第一维是棋子位置，第二维是棋子类型\n"
                                "查询表中一共有是90 * 14个元素（90个格子，14种棋子）\n"
                                "每个元素都是一个随机生成的64位整数\n"
-                               "对于棋盘上的每个位置，每种棋子都有其对应的一个随机数",
+                               "对于棋盘上的每个位置，每种棋子都有其对应的一个随机数\n"
+                               "除此以外，还需要额外生成一个'当前局面轮到黑方走子'的随机数",
                                font="Microsoft YaHei", font_size=30)
         self.play(DrawBorderThenFill(temp_text))
         self.wait(4)
@@ -356,19 +357,34 @@ class TranspositionTable(Scene):
             self.wait(2)
             self.play(FadeOut(zobrist_text), FadeOut(arrow), *[FadeOut(num) for num in random_numbers])
 
-        self.play(FadeOut(chess_board), FadeOut(random_number_generator), FadeOut(generator_text))
+        # generate the random number for side to move
+        stm_hash = random.randint(0, 2 ** 64 - 1)
+        stm_text = Text(f'轮到黑方走棋：0x{stm_hash:016x}', font="Microsoft YaHei", font_size=26) \
+            .move_to(random_number_generator.get_top() + UP)
+        self.play(GrowFromCenter(stm_text))
+        self.play(stm_text.animate.move_to(0))
+        self.wait(2)
+        self.play(FadeOut(chess_board), FadeOut(random_number_generator), FadeOut(generator_text),
+                  FadeOut(stm_text))
 
         text = Text("计算局面对应的Zobrist值", font="Microsoft YaHei")
         self.play(DrawBorderThenFill(text))
         self.play(text.animate.shift(UP * 2.2))
         temp_text = MarkupText("对于棋盘上的每一个棋子，都在刚才生成的Zobrist查询表中找到对应的随机数\n"
-                               "然后将这些随机数进行异或运算，得到的结果就是局面对应的Zobrist值",
+                               "然后将这些随机数进行异或运算，得到的结果就是局面对应的Zobrist值\n"
+                               "值得注意的是，如果当前局面轮到黑方走子，那么需要多异或一个'轮到黑方走子'\n"
+                               "的随机数，因为当前局面是轮到红方还是轮到黑方走棋显然是两个不同的局面\n"
+                               "即使两个局面中同样的棋子在相同的位置",
                                font="Microsoft YaHei", font_size=30)
         self.play(DrawBorderThenFill(temp_text))
         self.wait(4)
         self.play(FadeOut(text), Uncreate(temp_text))
 
         self.play(Create(chess_board))
+        side_to_move_text = Text("轮到红方行棋", font="Microsoft YaHei")
+        self.play(GrowFromCenter(side_to_move_text))
+        self.wait(1)
+        self.play(FadeOut(side_to_move_text))
         # draw a "马" and a "炮" on the chess board
         knight = Text("马", font="Microsoft YaHei", font_size=30).move_to(chess_board[0].get_corner(UL))
         border = Circle(color=WHITE, fill_color=RED, fill_opacity=.5, radius=.3) \
@@ -415,7 +431,6 @@ class TranspositionTable(Scene):
         # calculate the zobrist value
         for index, pos in [(0, UL), (1, UR)]:
             update_key(index, pos, knight.copy() if index == 0 else cannon.copy())
-        self.wait(2)
 
         self.play(FadeOut(chess_board), FadeOut(knight), FadeOut(cannon), FadeOut(text))
         text2 = Text("走子时局面Zobrist值的更新", font="Microsoft YaHei")
@@ -424,7 +439,8 @@ class TranspositionTable(Scene):
         temp_text = MarkupText("基于异或的可逆性，可以通过异或运算来更新局面的Zobrist值\n"
                                "走子时，只需要异或子力远离的位置的Zobrist，再异或子力去到的位置的Zobrist即可\n"
                                "如果有子力被吃掉，那么还需要再异或被吃掉子力的Zobrist\n"
-                               "这样就可以在O(1)的时间内更新局面的Zobrist值",
+                               "同样的，因为走子之后局面的行动方交换，所以需要异或'当前是否轮到黑方行棋'\n"
+                               "这样就可以在O(1)的时间内更新局面的Zobrist值了",
                                font="Microsoft YaHei", font_size=26)
         self.play(DrawBorderThenFill(temp_text))
         self.wait(8)
@@ -438,6 +454,21 @@ class TranspositionTable(Scene):
         self.play(FadeOut(arrow), knight.animate.move_to(chess_board[2].get_corner(DR)))
         update_key(0, UL, Text(""))
         update_key(2, DR, knight.copy())
+        self.wait(1)
+        # update the side to move
+        temp_text = Text("此时轮到黑方行棋了，是不是应该做些什么呢？", font="Microsoft YaHei", font_size=24)
+        self.play(GrowFromCenter(temp_text))
+        self.wait(2)
+        stm_text = Text(f"轮到黑方走棋：0x{stm_hash:016x}", font="Microsoft YaHei", font_size=30)
+        self.play(ReplacementTransform(temp_text, stm_text))
+        self.wait(1)
+        self.play(text[1].animate.next_to(stm_text, DOWN))
+        key ^= stm_hash
+        result_hash = Text(f"0x{key:016x}", font="Microsoft YaHei", font_size=30)
+        self.play(ReplacementTransform(VGroup(text[1], stm_text), result_hash))
+        self.wait(1)
+        self.play(result_hash.animate.next_to(text[0], RIGHT))
+        text[1] = result_hash
         self.wait(2)
         self.play(FadeOut(chess_board), FadeOut(knight), FadeOut(cannon), FadeOut(text))
 
@@ -805,45 +836,46 @@ class TranspositionTable(Scene):
 
         def search(depth):
             nonlocal position
+            runtime = 1 if depth < 3 else 0.2
             tip = MarkupText(f'当前深度为：{depth}，查询置换表', font="Microsoft YaHei", font_size=26) \
                 .to_corner(UL)
-            self.play(Write(tip))
+            self.play(Write(tip), run_time=runtime)
             _arrow = Arrow(tt.get_left(), position.get_right(), color=BLUE)
-            self.play(Create(_arrow))
-            self.wait(1)
+            self.play(Create(_arrow), run_time=runtime)
+            self.wait(runtime)
             if depth == 1:
                 __text = MarkupText('置换表中没有该局面，继续搜索', font="Microsoft YaHei", font_size=26) \
                     .to_corner(UL)
-                self.play(Transform(tip, __text))
-                self.wait(2)
+                self.play(Transform(tip, __text), run_time=runtime)
+                self.wait(runtime * 2)
             else:
                 __text = MarkupText('置换表中有该局面，但是深度不满足条件\n'
                                     '返回记录的pv走法，搜索时先尝试该走法',
                                     font="Microsoft YaHei", font_size=26).to_corner(UL)
-                self.play(Transform(tip, __text))
-                self.wait(2)
+                self.play(Transform(tip, __text), run_time=runtime)
+                self.wait(runtime * 2)
             tt_pv = tt_text[2:].copy()
-            self.play(tt_pv.animate.move_to(position.get_bottom() + DOWN * 0.5))
-            self.wait(1)
-            self.play(Uncreate(_arrow), FadeOut(tip))
+            self.play(tt_pv.animate.move_to(position.get_bottom() + DOWN * 0.5), run_time=runtime)
+            self.wait(runtime)
+            self.play(Uncreate(_arrow), FadeOut(tip), run_time=runtime)
             __text = MarkupText(search_results[depth - 1], font="Microsoft YaHei", font_size=26) \
                 .to_corner(DR)
-            self.play(Transform(tt_pv, __text))
-            self.wait(2)
+            self.play(Transform(tt_pv, __text), run_time=runtime)
+            self.wait(runtime * 2)
 
             __text = MarkupText('搜索完成，把pv走法保存到置换表', font="Microsoft YaHei", font_size=26) \
                 .to_corner(UL)
-            self.play(Create(__text))
-            self.wait(1)
+            self.play(Create(__text), run_time=runtime)
+            self.wait(runtime)
             _arrow = Arrow(tt_pv.get_top(), tt.get_bottom(), color=BLUE, buff=0.1)
-            self.play(Create(_arrow))
-            self.wait(1)
+            self.play(Create(_arrow), run_time=runtime)
+            self.wait(runtime)
             new_tt_pv = Text(str(depth) + ' | ' + search_results[depth - 1].split('\n')[1][:4],
                              font="Microsoft YaHei", font_size=30).move_to(tt_text)
-            self.play(Transform(tt_text, new_tt_pv))
-            self.wait(1)
-            self.play(Uncreate(_arrow), Uncreate(__text), Uncreate(tt_pv))
-            self.wait(1)
+            self.play(Transform(tt_text, new_tt_pv), run_time=runtime)
+            self.wait(runtime)
+            self.play(Uncreate(_arrow), Uncreate(__text), Uncreate(tt_pv), run_time=runtime)
+            self.wait(runtime)
 
         self.play(FadeOut(self.title))
         for i in range(1, 10):
