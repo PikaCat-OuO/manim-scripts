@@ -836,7 +836,7 @@ class TranspositionTable(Scene):
 
         def search(depth):
             nonlocal position
-            runtime = 1 if depth < 3 else 0.2
+            runtime = 1 if depth < 3 else 0.1
             tip = MarkupText(f'当前深度为：{depth}，查询置换表', font="Microsoft YaHei", font_size=26) \
                 .to_corner(UL)
             self.play(Write(tip), run_time=runtime)
@@ -929,7 +929,7 @@ class TranspositionTable(Scene):
         tt = VGroup(tt, border, display_text)
         self.play(Write(threads), Write(tt))
 
-        for _ in range(10):
+        for i in range(10):
             # random select some threads
             _threads = random.sample(list(threads), random.randint(1, 4))
             arrows = []
@@ -940,9 +940,10 @@ class TranspositionTable(Scene):
                 else:
                     arrow = Arrow(thread.get_bottom(), tt.get_top(), color=BLUE)
                 arrows.append(arrow)
-            self.play(*[Create(arrow) for arrow in arrows])
-            self.wait(1)
-            self.play(*[FadeOut(arrow) for arrow in arrows])
+            runtime = i < 3 and 1 or 0.2
+            self.play(*[Create(arrow, run_time=runtime) for arrow in arrows])
+            self.wait(runtime)
+            self.play(*[FadeOut(arrow, run_time=runtime) for arrow in arrows])
 
         self.play(FadeOut(threads), FadeOut(tt))
         self.wait(1)
