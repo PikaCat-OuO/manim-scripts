@@ -28,7 +28,6 @@ class EdgeService(SpeechService):
             self, **kwargs
     ):
         self.init_kwargs = kwargs
-        prompt_ask_missing_package("TTS", "TTS>=0.13.3")
         SpeechService.__init__(self, **kwargs)
 
     def generate_from_text(
